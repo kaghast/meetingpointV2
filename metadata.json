@@ -1,0 +1,7 @@
+{
+  "name": "Interactive Meeting Polling & Anonymous Feedback",
+  "description": "Mobile-friendly real-time meeting polling and anonymous feedback tool with live QR codes and admin control panel.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

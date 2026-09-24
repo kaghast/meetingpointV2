@@ -1,0 +1,49 @@
+{
+  "adminPassword": "admin",
+  "activeSessionId": "",
+  "sessions": [],
+  "sessionCode": "",
+  "sessionTitle": "",
+  "activeQuestionId": null,
+  "pollStatus": "closed",
+  "showResultsToParticipants": false,
+  "sessionEnded": false,
+  "questions": [
+    {
+      "id": "q-default-attendance",
+      "type": "attendance",
+      "category": "Yoklama",
+      "tags": [
+        "Yoklama",
+        "Katılım",
+        "Geofencing"
+      ],
+      "title": "Resmi Ders / Oturum Yoklaması (90 Saniye)",
+      "description": "Lütfen öğrenci numaranızı ve ad soyadınızı girerek yoklamanızı onaylayınız. Konum (Lat-Long) ve cihaz imzanız kaydedilmektedir.",
+      "isQuiz": false,
+      "createdAt": "2026-09-20T00:00:00.000Z",
+      "updatedAt": "2026-09-20T00:00:00.000Z"
+    }
+  ],
+  "answers": [],
+  "attendanceRecords": [],
+  "feedback": [],
+  "participantProfiles": {
+    "anon-i2qrq29g": {
+      "name": "Hızlı Kedi",
+      "avatar": "🦝"
+    },
+    "anon-q26halul": {
+      "name": "Hızlı Ahtapot",
+      "avatar": "🐯"
+    },
+    "anon-eqli2p1e": {
+      "name": "Uçan Kunduz",
+      "avatar": "🐧"
+    },
+    "anon-pdb5aysm": {
+      "name": "Piksel Rakun",
+      "avatar": "🐺"
+    }
+  }
+}
