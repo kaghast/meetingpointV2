@@ -1,9 +1,29 @@
 {
   "adminPassword": "admin",
-  "activeSessionId": "",
-  "sessions": [],
-  "sessionCode": "",
-  "sessionTitle": "",
+  "activeSessionId": "sess-1790320398269",
+  "sessions": [
+    {
+      "id": "sess-1790320398269",
+      "code": "SESS-TJ2Y",
+      "title": "Canlı Toplantı Oturumu",
+      "date": "2026-09-25",
+      "startTime": "09:00",
+      "endTime": "18:00",
+      "isArchived": false,
+      "sessionEnded": false,
+      "pollStatus": "closed",
+      "activeQuestionId": null,
+      "assignedQuestionIds": [
+        "q-default-attendance"
+      ],
+      "createdAt": "2026-09-25T07:13:18.269Z",
+      "updatedAt": "2026-09-25T07:15:32.316Z",
+      "attendanceStartedAt": 1790321177991,
+      "attendanceExpiresAt": null
+    }
+  ],
+  "sessionCode": "SESS-TJ2Y",
+  "sessionTitle": "Canlı Toplantı Oturumu",
   "activeQuestionId": null,
   "pollStatus": "closed",
   "showResultsToParticipants": false,
@@ -25,9 +45,80 @@
       "updatedAt": "2026-09-20T00:00:00.000Z"
     }
   ],
-  "answers": [],
-  "attendanceRecords": [],
-  "feedback": [],
+  "answers": [
+    {
+      "id": "ans-8h9ew0s",
+      "sessionId": "sess-1790320398269",
+      "participantId": "anon-q26halul",
+      "participantName": "Hızlı Ahtapot",
+      "participantAvatar": "🐯",
+      "type": "attendance",
+      "value": "424234 - Kemal Sahin",
+      "submittedAt": "2026-09-25T07:14:20.706Z"
+    }
+  ],
+  "attendanceRecords": [
+    {
+      "id": "att-l67p6bh",
+      "sessionId": "sess-1790320398269",
+      "questionId": "q-default-attendance",
+      "participantId": "anon-q26halul",
+      "studentNumber": "424234",
+      "fullName": "Kemal Sahin",
+      "location": {
+        "latitude": 41.015261,
+        "longitude": 29.023693,
+        "accuracy": 99,
+        "altitude": null,
+        "capturedAt": "2026-09-25T07:14:16.145Z"
+      },
+      "deviceSignature": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+        "platform": "Windows (Mobil)",
+        "browser": "Google Chrome",
+        "os": "Windows",
+        "screenResolution": "2364x1330 (24 bit)",
+        "timezone": "Europe/Istanbul",
+        "language": "tr-TR",
+        "hardwareConcurrency": "4 çekirdek",
+        "touchSupport": true,
+        "ip": "4f15"
+      },
+      "submittedAt": "2026-09-25T07:14:20.706Z"
+    }
+  ],
+  "feedback": [
+    {
+      "id": "fb-fa33qn7",
+      "sessionId": "sess-1790320398269",
+      "sessionCode": "SESS-TJ2Y",
+      "sessionTitle": "Canlı Toplantı Oturumu",
+      "participantId": "test-user-1",
+      "participantName": "Anonim",
+      "participantAvatar": "💬",
+      "message": "Gizli yonetici sorusu",
+      "category": "question",
+      "submittedAt": "2026-09-25T07:26:06.195Z",
+      "upvotes": 0,
+      "isRead": false,
+      "isPublic": false
+    },
+    {
+      "id": "fb-ubwohw9",
+      "sessionId": "sess-1790320398269",
+      "sessionCode": "SESS-TJ2Y",
+      "sessionTitle": "Canlı Toplantı Oturumu",
+      "participantId": "anon-q26halul",
+      "participantName": "Hızlı Ahtapot",
+      "participantAvatar": "🐯",
+      "message": "fdsfsdf",
+      "category": "question",
+      "submittedAt": "2026-09-25T07:16:48.355Z",
+      "upvotes": 1,
+      "isRead": false,
+      "isPublic": true
+    }
+  ],
   "participantProfiles": {
     "anon-i2qrq29g": {
       "name": "Hızlı Kedi",

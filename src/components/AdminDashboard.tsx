@@ -21,6 +21,7 @@ import {
   FileSpreadsheet,
   Search,
   Filter,
+  Lock,
   Trophy,
   Award,
   Zap,
@@ -37,7 +38,10 @@ import {
   MailQuestion,
   LogOut,
   Users,
-  ArrowRight
+  UserCheck,
+  Square,
+  ArrowRight,
+  Loader2
 } from 'lucide-react';
 import { 
   Question, 
@@ -96,8 +100,8 @@ interface AdminDashboardProps {
   onToggleFeedbackRead: (feedbackId: string, isRead?: boolean) => Promise<boolean>;
   onMarkAllFeedbackRead: (sessionId?: string) => Promise<boolean>;
   // Attendance operations
-  onStartAttendance: (sessionId: string) => Promise<boolean>;
-  onStopAttendance: (sessionId: string) => Promise<boolean>;
+  onStartAttendance: (sessionId?: string, questionId?: string) => Promise<boolean>;
+  onStopAttendance: (sessionId?: string) => Promise<boolean>;
   onRefreshAttendance?: () => void;
   onLogout?: () => void;
 }
@@ -185,6 +189,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Feedback Tab Filter State
   const [feedbackSessionFilter, setFeedbackSessionFilter] = useState<string>('all');
   const [feedbackReadFilter, setFeedbackReadFilter] = useState<'all' | 'unread' | 'read'>('all');
+  const [feedbackVisibilityFilter, setFeedbackVisibilityFilter] = useState<'all' | 'public' | 'private'>('all');
 
   // Leaderboard ranking mode and session selector
   const [leaderboardMode, setLeaderboardMode] = useState<'points' | 'activity'>('points');
@@ -294,23 +299,64 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } else if (feedbackReadFilter === 'read') {
       if (!fb.isRead) return false;
     }
+    if (feedbackVisibilityFilter === 'private') {
+      if (fb.isPublic !== false) return false;
+    } else if (feedbackVisibilityFilter === 'public') {
+      if (fb.isPublic === false) return false;
+    }
     return true;
   });
 
-  const unreadFeedbackCount = feedback.filter(fb => !fb.isRead).length;
+  const unreadFeedbackCount = feedback.filter((fb) => !fb.isRead).length;
 
   // Active question object
   const currentActiveQ = questions.find((q) => q.id === activeQuestionId) || null;
   const currentSummary = currentActiveQ ? summaries[currentActiveQ.id] : null;
 
   // Active session object
-  const activeSessionObj = sessions.find(s => s.id === activeSessionId) || sessions[0];
+  const activeSessionObj = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 
   // Attendance running check
   const isAttendanceRunning = pollStatus === 'open' && Boolean(
     (currentActiveQ?.type === 'attendance') || 
     (attendanceExpiresAt && Date.now() < attendanceExpiresAt)
   );
+
+  const [isOperatingAttendance, setIsOperatingAttendance] = useState(false);
+  const [attendanceNotification, setAttendanceNotification] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  const handleAttendanceToggle = async (questionId?: string) => {
+    if (isOperatingAttendance) return;
+    setIsOperatingAttendance(true);
+    try {
+      const targetSessionId = activeSession?.id || activeSessionId || sessions.find((s) => !s.isArchived)?.id || sessions[0]?.id || '';
+      if (isAttendanceRunning) {
+        const ok = await onStopAttendance(targetSessionId);
+        if (ok) {
+          setAttendanceNotification({ text: 'Yoklama durduruldu. Katılımcı ekranları "Soru Bekleniyor" durumuna geçti.', type: 'success' });
+          setTimeout(() => setAttendanceNotification(null), 4000);
+        } else {
+          setAttendanceNotification({ text: 'Yoklama durdurulamadı. Lütfen oturum durumunu kontrol edin.', type: 'error' });
+          setTimeout(() => setAttendanceNotification(null), 4000);
+        }
+      } else {
+        const ok = await onStartAttendance(targetSessionId, questionId);
+        if (ok) {
+          setAttendanceNotification({ text: '90 saniyelik yoklama katılımcılara atandı ve canlı olarak başlatıldı! Katılımcı ekranları açıldı.', type: 'success' });
+          setTimeout(() => setAttendanceNotification(null), 4000);
+        } else {
+          setAttendanceNotification({ text: 'Yoklama başlatılamadı. Aktif oturumu kontrol edin.', type: 'error' });
+          setTimeout(() => setAttendanceNotification(null), 4000);
+        }
+      }
+    } catch (err: any) {
+      console.error('Attendance toggle error:', err);
+      setAttendanceNotification({ text: err?.message || 'Yoklama işlemi gerçekleştirilemedi.', type: 'error' });
+      setTimeout(() => setAttendanceNotification(null), 4000);
+    } finally {
+      setIsOperatingAttendance(false);
+    }
+  };
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -353,6 +399,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="w-full max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+      {/* Attendance Action Notification Banner */}
+      {attendanceNotification && (
+        <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 shadow-md animate-in slide-in-from-top-2 duration-200 ${
+          attendanceNotification.type === 'success'
+            ? 'bg-emerald-600 text-white border-emerald-700'
+            : 'bg-rose-600 text-white border-rose-700'
+        }`}>
+          <div className="flex items-center gap-2.5 font-bold text-xs sm:text-sm">
+            {attendanceNotification.type === 'success' ? (
+              <CheckCircle className="w-5 h-5 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+            )}
+            <span>{attendanceNotification.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAttendanceNotification(null)}
+            className="p-1 hover:bg-white/20 rounded-lg transition-colors cursor-pointer text-white"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Top Banner: Active Session Snapshot */}
       <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="space-y-1">
@@ -625,6 +696,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </button>
       </div>
 
+      {/* Attendance Action Feedback Toast / Notification */}
+      {attendanceNotification && (
+        <div className={`p-4 rounded-2xl border text-xs sm:text-sm font-semibold flex items-center justify-between gap-3 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200 ${
+          attendanceNotification.type === 'success'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+            : 'bg-red-50 border-red-200 text-red-900'
+        }`}>
+          <div className="flex items-center gap-2.5">
+            {attendanceNotification.type === 'success' ? (
+              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+            )}
+            <span>{attendanceNotification.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAttendanceNotification(null)}
+            className="text-slate-400 hover:text-slate-700 p-1 rounded-lg cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* TAB 1: SESSIONS MANAGEMENT - ONLY ACTIVE SESSION */}
       {activeTab === 'sessions' && (
         <div className="space-y-4">
@@ -737,8 +833,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 {/* Action Buttons */}
                 <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    {/* Yoklama Action */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Direct Yoklama Ata & Başlat Action */}
+                    {isAttendanceRunning ? (
+                      <button
+                        type="button"
+                        disabled={isOperatingAttendance}
+                        onClick={() => handleAttendanceToggle()}
+                        className="px-3.5 py-2 font-bold text-xs rounded-xl bg-rose-600 hover:bg-rose-700 text-white transition-all cursor-pointer flex items-center gap-1.5 shadow-xs animate-pulse disabled:opacity-50"
+                        title="Yoklamayı erken durdur"
+                      >
+                        {isOperatingAttendance ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Square className="w-3.5 h-3.5 fill-current" />
+                        )}
+                        <span>
+                          {isOperatingAttendance
+                            ? 'Durduruluyor...'
+                            : `Yoklamayı Durdur (${attendanceSecondsLeft !== null && attendanceSecondsLeft !== undefined ? attendanceSecondsLeft : 0}s)`}
+                        </span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isOperatingAttendance}
+                        onClick={() => handleAttendanceToggle()}
+                        className="px-3.5 py-2 font-bold text-xs rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white transition-all cursor-pointer flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                        title="Bu oturum için 90 saniyelik yoklamayı başlat ve tüm katılımcılara ata"
+                      >
+                        {isOperatingAttendance ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <UserCheck className="w-3.5 h-3.5" />
+                        )}
+                        <span>{isOperatingAttendance ? 'Başlatılıyor...' : 'Yoklama Ata & Başlat (90sn)'}</span>
+                      </button>
+                    )}
+
+                    {/* Yoklama Verileri / Listesi */}
                     <button
                       type="button"
                       onClick={() => {
@@ -746,10 +879,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         setIsAttendanceModalOpen(true);
                       }}
                       className="px-3.5 py-2 font-bold text-xs rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-colors cursor-pointer flex items-center gap-1.5"
-                      title="Bu oturumun yoklama verilerini gör veya 90 saniyelik yoklama başlat"
+                      title="Bu oturumun yoklama verilerini ve GPS detaylarını görüntüle"
                     >
                       <Users className="w-3.5 h-3.5" />
-                      <span>Yoklama ({attendanceRecords.filter(r => r.sessionId === activeSession.id).length})</span>
+                      <span>Yoklama Kayıtları ({attendanceRecords.filter(r => r.sessionId === activeSession.id).length})</span>
                     </button>
 
                     {/* Archive Button */}
@@ -1095,6 +1228,89 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* TAB 2: LIVE CONTROL */}
       {activeTab === 'live' && (
         <div className="space-y-6">
+          {/* Quick Attendance Control Banner in Canlı Kontrol */}
+          <div className={`p-4 rounded-3xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs ${
+            isAttendanceRunning
+              ? 'bg-indigo-50/90 border-indigo-300 ring-2 ring-indigo-100'
+              : 'bg-white border-slate-200'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                isAttendanceRunning ? 'bg-indigo-600 text-white animate-pulse shadow-xs' : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+              }`}>
+                <UserCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="font-extrabold text-sm sm:text-base text-slate-900">
+                    {isAttendanceRunning ? 'Canlı Yoklama Periyodu Açık' : 'Ders / Toplantı Yoklaması'}
+                  </h4>
+                  {isAttendanceRunning ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-indigo-600 text-white animate-pulse">
+                      ⏳ {attendanceSecondsLeft !== null && attendanceSecondsLeft !== undefined ? attendanceSecondsLeft : 0}s Kaldı
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                      90 Saniye • Geofencing &amp; Cihaz İmzalı
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {isAttendanceRunning
+                    ? `${attendanceRecords.filter(r => r.sessionId === activeSessionId).length} katılımcı yoklama onayladı. Süre tamamlandığında ekran otomatik olarak 'Soru Bekleniyor' durumuna geçer.`
+                    : 'Aktif oturumdaki katılımcı ekranlarına tek tıkla 90 saniyelik yoklama formunu atar.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {isAttendanceRunning ? (
+                <button
+                  type="button"
+                  disabled={isOperatingAttendance}
+                  onClick={() => handleAttendanceToggle()}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isOperatingAttendance ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                  )}
+                  <span>{isOperatingAttendance ? 'Durduruluyor...' : 'Yoklamayı Durdur'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isOperatingAttendance}
+                  onClick={() => handleAttendanceToggle()}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isOperatingAttendance ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                  )}
+                  <span>{isOperatingAttendance ? 'Başlatılıyor...' : 'Yoklama Ata & Başlat (90sn)'}</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeSession) {
+                    setAttendanceTargetSession(activeSession);
+                    setIsAttendanceModalOpen(true);
+                  }
+                }}
+                className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                title="Yoklama kayıtlarını ve GPS detaylarını görüntüle"
+              >
+                <Users className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Kayıtlar ({attendanceRecords.filter(r => r.sessionId === activeSessionId).length})</span>
+              </button>
+            </div>
+          </div>
+
           {/* Active Question Banner */}
           <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-4 border-b border-slate-100">
@@ -1344,18 +1560,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => onSetActiveQuestion(isActive ? null : q.id)}
-                          className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer ${
-                            isActive
-                              ? 'bg-amber-100 hover:bg-amber-200 text-amber-900'
-                              : 'bg-blue-600 hover:bg-blue-700 text-white'
-                          }`}
-                        >
-                          {isActive ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                          <span>{isActive ? 'Durdur' : 'Yayınla'}</span>
-                        </button>
+                        {q.type === 'attendance' ? (
+                          <button
+                            type="button"
+                            disabled={isOperatingAttendance}
+                            onClick={() => handleAttendanceToggle(q.id)}
+                            className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
+                              isAttendanceRunning
+                                ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                            } disabled:opacity-50`}
+                            title="Oturum için 90 saniyelik yoklamayı başlat ve katılımcılara ata"
+                          >
+                            {isOperatingAttendance ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : isAttendanceRunning ? (
+                              <Square className="w-3 h-3 fill-current" />
+                            ) : (
+                              <Play className="w-3 h-3 fill-current" />
+                            )}
+                            <span>
+                              {isOperatingAttendance
+                                ? 'İşleniyor...'
+                                : isAttendanceRunning
+                                ? `Yoklamayı Durdur (${attendanceSecondsLeft !== null && attendanceSecondsLeft !== undefined ? attendanceSecondsLeft : 0}s)`
+                                : 'Yoklama Ata & Başlat (90sn)'}
+                            </span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onSetActiveQuestion(isActive ? null : q.id)}
+                            className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer ${
+                              isActive
+                                ? 'bg-amber-100 hover:bg-amber-200 text-amber-900'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                            }`}
+                          >
+                            {isActive ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                            <span>{isActive ? 'Durdur' : 'Yayınla'}</span>
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -1625,39 +1870,78 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </select>
             </div>
 
-            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setFeedbackReadFilter('all')}
-                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                  feedbackReadFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
-                }`}
-              >
-                Tümü ({feedback.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFeedbackReadFilter('unread')}
-                className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
-                  feedbackReadFilter === 'unread' ? 'bg-white text-rose-700 font-bold shadow-xs' : 'text-slate-600'
-                }`}
-              >
-                <span>Okunmamış</span>
-                {unreadFeedbackCount > 0 && (
-                  <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px]">
-                    {unreadFeedbackCount}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setFeedbackReadFilter('read')}
-                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                  feedbackReadFilter === 'read' ? 'bg-white text-emerald-700 font-bold shadow-xs' : 'text-slate-600'
-                }`}
-              >
-                Okunmuş ({feedback.filter(f => f.isRead).length})
-              </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Read Filter */}
+              <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setFeedbackReadFilter('all')}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                    feedbackReadFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+                  }`}
+                >
+                  Tümü ({feedback.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFeedbackReadFilter('unread')}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                    feedbackReadFilter === 'unread' ? 'bg-white text-rose-700 font-bold shadow-xs' : 'text-slate-600'
+                  }`}
+                >
+                  <span>Okunmamış</span>
+                  {unreadFeedbackCount > 0 && (
+                    <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px]">
+                      {unreadFeedbackCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFeedbackReadFilter('read')}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                    feedbackReadFilter === 'read' ? 'bg-white text-emerald-700 font-bold shadow-xs' : 'text-slate-600'
+                  }`}
+                >
+                  Okunmuş ({feedback.filter(f => f.isRead).length})
+                </button>
+              </div>
+
+              {/* Visibility Filter (Herkes / Sadece Admin) */}
+              <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setFeedbackVisibilityFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    feedbackVisibilityFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+                  }`}
+                  title="Tüm iletileri göster"
+                >
+                  Tümü
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFeedbackVisibilityFilter('private')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                    feedbackVisibilityFilter === 'private' ? 'bg-white text-amber-900 font-bold shadow-xs' : 'text-slate-600'
+                  }`}
+                  title="Sadece yöneticinin görebileceği gizli iletiler"
+                >
+                  <Lock className="w-3 h-3 text-amber-600" />
+                  <span>Sadece Admin ({feedback.filter(f => f.isPublic === false).length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFeedbackVisibilityFilter('public')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                    feedbackVisibilityFilter === 'public' ? 'bg-white text-purple-900 font-bold shadow-xs' : 'text-slate-600'
+                  }`}
+                  title="Herkese açık iletiler"
+                >
+                  <Eye className="w-3 h-3 text-purple-600" />
+                  <span>Herkese Açık ({feedback.filter(f => f.isPublic !== false).length})</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1699,6 +1983,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-100 text-slate-600">
                           {fb.category === 'question' ? '❓ Soru' : fb.category === 'feedback' ? '💬 Görüş' : '💡 Öneri'}
                         </span>
+
+                        {fb.isPublic === false ? (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" />
+                            <span>Sadece Yönetici (Gizli)</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                            <Eye className="w-2.5 h-2.5" />
+                            <span>Herkese Açık</span>
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold pt-1">

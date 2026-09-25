@@ -65,9 +65,15 @@ function loadData(): MeetingStoreData {
       sessions = sessions.map(s => {
         let pollStatus = s.pollStatus;
         let attendanceExpiresAt = s.attendanceExpiresAt;
+        let activeQuestionId = s.activeQuestionId;
         if (attendanceExpiresAt && nowMs >= attendanceExpiresAt) {
           pollStatus = 'closed';
           attendanceExpiresAt = null;
+        }
+        // If activeQuestionId was attendance question but attendance is expired or not open, clear activeQuestionId so "Soru bekleniyor" is shown
+        if (activeQuestionId === 'q-default-attendance' && (pollStatus !== 'open' || !attendanceExpiresAt)) {
+          activeQuestionId = null;
+          pollStatus = 'closed';
         }
         const assigned = Array.isArray(s.assignedQuestionIds) ? [...s.assignedQuestionIds] : [];
         if (!assigned.includes('q-default-attendance')) {
@@ -75,6 +81,7 @@ function loadData(): MeetingStoreData {
         }
         return {
           ...s,
+          activeQuestionId,
           pollStatus,
           attendanceExpiresAt,
           assignedQuestionIds: assigned,
@@ -112,6 +119,7 @@ function loadData(): MeetingStoreData {
           sessionCode: fb.sessionCode || (activeSess ? activeSess.code : ''),
           sessionTitle: fb.sessionTitle || (activeSess ? activeSess.title : ''),
           isRead: fb.isRead !== undefined ? fb.isRead : false,
+          isPublic: fb.isPublic !== undefined ? fb.isPublic : true,
         })),
       };
     }
@@ -481,13 +489,25 @@ async function startServer() {
     if (activeSession.attendanceExpiresAt && Date.now() >= activeSession.attendanceExpiresAt) {
       activeSession.pollStatus = 'closed';
       activeSession.attendanceExpiresAt = null;
+      if (activeSession.activeQuestionId === 'q-default-attendance' || activeSession.activeQuestionId?.includes('attendance')) {
+        activeSession.activeQuestionId = null;
+      }
       if (store.activeSessionId === activeSession.id) {
         store.pollStatus = 'closed';
+        store.activeQuestionId = activeSession.activeQuestionId;
       }
       saveData(store);
     }
 
-    const activeQuestion = store.questions.find((q) => q.id === activeSession.activeQuestionId) || null;
+    let activeQuestion = store.questions.find((q) => q.id === activeSession.activeQuestionId) || null;
+
+    // If active question is attendance, but poll is not open or timer has expired, treat active question as null (Soru bekleniyor)
+    if (activeQuestion && activeQuestion.type === 'attendance') {
+      const isAttendanceLive = activeSession.pollStatus === 'open' && Boolean(activeSession.attendanceExpiresAt && Date.now() < activeSession.attendanceExpiresAt);
+      if (!isAttendanceLive) {
+        activeQuestion = null;
+      }
+    }
 
     let totalResponsesForActive = 0;
     let participantAnswer: Answer | null = null;
@@ -527,8 +547,13 @@ async function startServer() {
       : [];
 
     // Session feedback (only for this session or legacy)
+    // STRICT RULE: If isPublic is false (Hayır seçildi), only admin can see it - never leak to public participants!
     const sessionFeedback = store.feedback
-      .filter((fb) => !fb.sessionId || fb.sessionId === activeSession.id)
+      .filter((fb) => {
+        const matchesSession = !fb.sessionId || fb.sessionId === activeSession.id;
+        if (!matchesSession) return false;
+        return fb.isPublic !== false;
+      })
       .slice(0, 50);
 
     res.json({
@@ -810,7 +835,7 @@ async function startServer() {
   // Submit anonymous feedback / Q&A
   // Tied to the relevant session with isRead: false (Okunmadı)
   app.post('/api/participant/feedback', (req, res) => {
-    const { participantId, message, category, participantName, participantAvatar } = req.body;
+    const { participantId, message, category, participantName, participantAvatar, isPublic } = req.body;
     if (!message || !message.trim()) {
       return res.status(400).json({ error: 'Mesaj boş bırakılamaz.' });
     }
@@ -836,6 +861,7 @@ async function startServer() {
       submittedAt: new Date().toISOString(),
       upvotes: 0,
       isRead: false, // Default: Okunmadı
+      isPublic: isPublic !== undefined ? Boolean(isPublic) : true, // true: Herkes görebilir, false: Sadece admin görebilir
     };
 
     store.feedback.unshift(newFeedback);
@@ -844,7 +870,12 @@ async function startServer() {
     }
 
     saveData(store);
-    broadcastSSE('feedback-added', newFeedback);
+    if (newFeedback.isPublic !== false) {
+      broadcastSSE('feedback-added', newFeedback);
+    } else {
+      // Private to admin only
+      broadcastSSE('admin-feedback-added', newFeedback);
+    }
 
     res.json({ success: true, feedback: newFeedback });
   });
@@ -1062,9 +1093,7 @@ async function startServer() {
       isArchived: false,
       sessionEnded: false,
       pollStatus: 'closed',
-      activeQuestionId: Array.isArray(assignedQuestionIds) && assignedQuestionIds.length > 0 
-        ? assignedQuestionIds[0] 
-        : (store.questions.length > 0 ? store.questions[0].id : null),
+      activeQuestionId: null, // Initial session starts with no active question -> "Soru bekleniyor"
       assignedQuestionIds: Array.isArray(assignedQuestionIds) ? assignedQuestionIds : store.questions.map(q => q.id),
       createdAt: nowIso,
       updatedAt: nowIso,
@@ -1305,20 +1334,66 @@ async function startServer() {
   // --- ATTENDANCE (YOKLAMA) MANAGEMENT ---
   // Start 90-second attendance for a session.
   // Rule: "İstediğim oturumda istediğim zaman başlatabileceğim. O an bütün sorular pasif olacak. Aşağıdaki durumlara göre veri toplayacak ve kendi otomatik duracak... sadece 90 saniye aktif olacak sonra direk pasif olacak."
-  app.post('/api/admin/sessions/:id/start-attendance', verifyAdminAuth, (req, res) => {
+  app.post(['/api/admin/sessions/:id/start-attendance', '/api/admin/sessions/start-attendance', '/api/admin/start-attendance'], verifyAdminAuth, (req, res) => {
     const { id } = req.params;
     const store = loadData();
-    const sess = store.sessions.find((s) => s.id === id);
+    const targetId = id || req.body?.sessionId || store.activeSessionId;
+
+    let sess = store.sessions.find((s) => s.id === targetId);
     if (!sess) {
-      return res.status(404).json({ error: 'Oturum bulunamadı.' });
+      sess = store.sessions.find((s) => s.id === store.activeSessionId) || store.sessions.find((s) => !s.isArchived) || store.sessions[0];
     }
 
+    // If no session exists at all, auto-create one so attendance can be launched immediately!
+    if (!sess) {
+      const code = 'SESS-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+      const nowIso = new Date().toISOString();
+      sess = {
+        id: 'sess-' + Date.now(),
+        code,
+        title: 'Canlı Toplantı Oturumu',
+        date: nowIso.split('T')[0],
+        startTime: '09:00',
+        endTime: '18:00',
+        isArchived: false,
+        sessionEnded: false,
+        pollStatus: 'open',
+        activeQuestionId: null,
+        assignedQuestionIds: store.questions.map(q => q.id),
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      store.sessions.push(sess);
+      store.activeSessionId = sess.id;
+      store.sessionCode = sess.code;
+      store.sessionTitle = sess.title;
+    }
+
+    // If target session is archived, unarchive and activate it
     if (sess.isArchived) {
-      return res.status(400).json({ error: 'Arşivlenmiş oturumda yoklama başlatılamaz.' });
+      const nowIso = new Date().toISOString();
+      store.sessions.forEach((s) => {
+        if (s.id !== sess!.id) {
+          s.isArchived = true;
+          s.pollStatus = 'closed';
+          s.sessionEnded = true;
+          s.updatedAt = nowIso;
+        }
+      });
+      sess.isArchived = false;
+      sess.sessionEnded = false;
+      sess.updatedAt = nowIso;
+      store.activeSessionId = sess.id;
+      store.sessionCode = sess.code;
+      store.sessionTitle = sess.title;
     }
 
-    // Find or create default attendance question
-    let attQuestion = store.questions.find((q) => q.type === 'attendance');
+    // Find or create attendance question (support passed questionId)
+    const requestedQId = req.body?.questionId;
+    let attQuestion = requestedQId ? store.questions.find((q) => q.id === requestedQId) : null;
+    if (!attQuestion) {
+      attQuestion = store.questions.find((q) => q.type === 'attendance');
+    }
     if (!attQuestion) {
       attQuestion = defaultAttendanceQuestion;
       store.questions.push(attQuestion);
@@ -1335,16 +1410,20 @@ async function startServer() {
     const expiresAt = now + durationSeconds * 1000;
 
     // All other questions become passive because activeQuestionId becomes attendance question
+    sess.isArchived = false;
+    sess.sessionEnded = false;
     sess.activeQuestionId = attQuestion.id;
     sess.pollStatus = 'open';
     sess.attendanceStartedAt = now;
     sess.attendanceExpiresAt = expiresAt;
 
-    // If target session is active session, sync root
-    if (store.activeSessionId === sess.id) {
-      store.activeQuestionId = attQuestion.id;
-      store.pollStatus = 'open';
-    }
+    // If target session is active session or default, sync root store
+    store.activeSessionId = sess.id;
+    store.sessionCode = sess.code;
+    store.sessionTitle = sess.title;
+    store.sessionEnded = false;
+    store.pollStatus = 'open';
+    store.activeQuestionId = attQuestion.id;
 
     // Clear any existing timer for this session
     if (attendanceTimers.has(sess.id)) {
@@ -1356,16 +1435,19 @@ async function startServer() {
     const timer = setTimeout(() => {
       try {
         const currStore = loadData();
-        const targetSess = currStore.sessions.find((s) => s.id === sess.id);
+        const targetSess = currStore.sessions.find((s) => s.id === sess!.id);
         if (targetSess && targetSess.attendanceExpiresAt && Date.now() >= targetSess.attendanceExpiresAt) {
           targetSess.pollStatus = 'closed';
           targetSess.attendanceExpiresAt = null;
+          targetSess.activeQuestionId = null; // Clear so participants see "Soru bekleniyor"
           if (currStore.activeSessionId === targetSess.id) {
             currStore.pollStatus = 'closed';
+            currStore.activeQuestionId = null;
           }
           saveData(currStore);
           broadcastSSE('session-state-changed', {
             sessionId: targetSess.id,
+            activeQuestionId: null,
             pollStatus: 'closed',
             attendanceExpiresAt: null,
             attendanceSecondsLeft: 0,
@@ -1376,7 +1458,7 @@ async function startServer() {
       } catch (err) {
         console.error('Error in auto attendance timer:', err);
       } finally {
-        attendanceTimers.delete(sess.id);
+        attendanceTimers.delete(sess!.id);
       }
     }, durationSeconds * 1000);
 
@@ -1384,8 +1466,10 @@ async function startServer() {
 
     saveData(store);
 
+    broadcastSSE('sessions-updated', { sessions: store.sessions });
     broadcastSSE('session-state-changed', {
       sessionId: sess.id,
+      activeSessionId: store.activeSessionId,
       activeQuestionId: sess.activeQuestionId,
       pollStatus: 'open',
       attendanceExpiresAt: sess.attendanceExpiresAt,
@@ -1402,24 +1486,33 @@ async function startServer() {
       success: true,
       session: sess,
       attendanceQuestion: attQuestion,
+      attendanceExpiresAt: expiresAt,
       expiresAt,
       durationSeconds,
+      attendanceSecondsLeft: durationSeconds,
     });
   });
 
   // Admin: Stop attendance early
-  app.post('/api/admin/sessions/:id/stop-attendance', verifyAdminAuth, (req, res) => {
+  app.post(['/api/admin/sessions/:id/stop-attendance', '/api/admin/sessions/stop-attendance', '/api/admin/stop-attendance'], verifyAdminAuth, (req, res) => {
     const { id } = req.params;
     const store = loadData();
-    const sess = store.sessions.find((s) => s.id === id);
+    const targetId = id || req.body?.sessionId || store.activeSessionId;
+
+    let sess = store.sessions.find((s) => s.id === targetId);
+    if (!sess) {
+      sess = store.sessions.find((s) => s.id === store.activeSessionId) || store.sessions[0];
+    }
     if (!sess) {
       return res.status(404).json({ error: 'Oturum bulunamadı.' });
     }
 
     sess.pollStatus = 'closed';
     sess.attendanceExpiresAt = null;
+    sess.activeQuestionId = null; // Clear so participants see "Soru bekleniyor"
     if (store.activeSessionId === sess.id) {
       store.pollStatus = 'closed';
+      store.activeQuestionId = null;
     }
 
     if (attendanceTimers.has(sess.id)) {
@@ -1429,8 +1522,11 @@ async function startServer() {
 
     saveData(store);
 
+    broadcastSSE('sessions-updated', { sessions: store.sessions });
     broadcastSSE('session-state-changed', {
       sessionId: sess.id,
+      activeSessionId: store.activeSessionId,
+      activeQuestionId: null,
       pollStatus: 'closed',
       attendanceExpiresAt: null,
       attendanceSecondsLeft: 0,
@@ -1669,8 +1765,67 @@ async function startServer() {
     }
 
     if (questionId !== undefined) {
-      activeSession.activeQuestionId = questionId;
-      store.activeQuestionId = questionId;
+      const targetQ = store.questions.find((q) => q.id === questionId);
+      if (targetQ && targetQ.type === 'attendance') {
+        const durationSeconds = 90;
+        const now = Date.now();
+        const expiresAt = now + durationSeconds * 1000;
+        activeSession.activeQuestionId = targetQ.id;
+        activeSession.pollStatus = 'open';
+        activeSession.attendanceStartedAt = now;
+        activeSession.attendanceExpiresAt = expiresAt;
+        store.activeQuestionId = targetQ.id;
+        store.pollStatus = 'open';
+
+        if (attendanceTimers.has(activeSession.id)) {
+          clearTimeout(attendanceTimers.get(activeSession.id)!);
+          attendanceTimers.delete(activeSession.id);
+        }
+
+        const timer = setTimeout(() => {
+          try {
+            const currStore = loadData();
+            const targetSess = currStore.sessions.find((s) => s.id === activeSession.id);
+            if (targetSess && targetSess.attendanceExpiresAt && Date.now() >= targetSess.attendanceExpiresAt) {
+              targetSess.pollStatus = 'closed';
+              targetSess.attendanceExpiresAt = null;
+              targetSess.activeQuestionId = null;
+              if (currStore.activeSessionId === targetSess.id) {
+                currStore.pollStatus = 'closed';
+                currStore.activeQuestionId = null;
+              }
+              saveData(currStore);
+              broadcastSSE('session-state-changed', {
+                sessionId: targetSess.id,
+                activeQuestionId: null,
+                pollStatus: 'closed',
+                attendanceExpiresAt: null,
+                attendanceSecondsLeft: 0,
+                attendanceEnded: true,
+              });
+              broadcastSSE('attendance-ended', { sessionId: targetSess.id });
+            }
+          } catch (err) {
+            console.error('Error in auto attendance timer:', err);
+          } finally {
+            attendanceTimers.delete(activeSession.id);
+          }
+        }, durationSeconds * 1000);
+        attendanceTimers.set(activeSession.id, timer);
+
+        broadcastSSE('attendance-started', {
+          sessionId: activeSession.id,
+          questionId: targetQ.id,
+          expiresAt,
+          durationSeconds,
+        });
+      } else {
+        activeSession.activeQuestionId = questionId;
+        store.activeQuestionId = questionId;
+        if (activeSession.attendanceExpiresAt) {
+          activeSession.attendanceExpiresAt = null;
+        }
+      }
     }
     if (pollStatus !== undefined && ['open', 'closed'].includes(pollStatus)) {
       activeSession.pollStatus = pollStatus;

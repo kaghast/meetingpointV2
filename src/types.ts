@@ -89,6 +89,7 @@ export interface AnonymousFeedback {
   submittedAt: string;
   upvotes: number;
   isRead?: boolean; // Okundu / Okunmadı durumu
+  isPublic?: boolean; // true: Herkes görebilir (varsayılan), false: Sadece admin görebilir
 }
 
 export interface LeaderboardEntry {

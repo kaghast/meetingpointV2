@@ -13,7 +13,8 @@ import {
   Award, 
   HelpCircle,
   CheckCircle2,
-  Layers
+  Layers,
+  UserCheck
 } from 'lucide-react';
 import { MeetingSession, Question, Answer, QuestionType } from '../types';
 
@@ -467,6 +468,52 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Quick Yoklama (Attendance) Assignment Toggle */}
+            {allQuestions.some((q) => q.type === 'attendance') && (() => {
+              const attQ = allQuestions.find((q) => q.type === 'attendance')!;
+              const isAssigned = assignedQuestionIds.includes(attQ.id);
+              return (
+                <div className="p-3 bg-indigo-50/80 border border-indigo-200 rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <UserCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-extrabold text-slate-900 text-xs block">Resmi Ders / Oturum Yoklaması (90sn)</span>
+                        <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-800">
+                          Yoklama
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-500">Geofencing (GPS konum) ve Cihaz İmzası doğrulaması içerir</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isArchived}
+                    onClick={() => toggleQuestionAssignment(attQ.id)}
+                    className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                      isAssigned
+                        ? 'bg-indigo-600 text-white shadow-2xs'
+                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {isAssigned ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>Yoklama Atandı</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Yoklamayı Ata</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              );
+            })()}
 
             {/* AUTOCOMPLETE QUESTION SEARCH */}
             <div ref={searchContainerRef} className="relative">

@@ -246,14 +246,14 @@ export const AttendanceForm: React.FC<AttendanceFormProps> = ({
         </span>
         <h2 className="text-2xl font-bold text-slate-800">Yoklama Süresi Tamamlandı</h2>
         <p className="text-slate-600 text-sm mt-2 max-w-md mx-auto">
-          Bu soru tipi için tanımlanan 90 saniyelik yoklama periyodu sona ermiştir. Şu anda yeni yoklama girişi kabul edilmemektedir.
+          Bu oturum için tanımlanan 90 saniyelik yoklama periyodu sona ermiştir. Sıradaki soru bekleniyor...
         </p>
 
         <div className="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500 text-left flex items-start gap-3">
           <Info className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
           <div>
             <p className="font-medium text-slate-700">Bilgilendirme:</p>
-            <p className="mt-0.5">Yönetici oturum içerisinde yoklamayı tekrar başlattığında bu ekran otomatik olarak açılacaktır.</p>
+            <p className="mt-0.5">Yönetici yeni bir soru veya yoklama başlattığında ekranınız otomatik olarak güncellenecektir.</p>
           </div>
         </div>
       </div>

@@ -356,10 +356,16 @@ export default function App() {
       eventSource.addEventListener('feedback-added', (e: any) => {
         try {
           const newFb = JSON.parse(e.data);
-          setFeedbackList((prev) => [newFb, ...prev.filter((item) => item.id !== newFb.id)]);
+          if (newFb.isPublic !== false) {
+            setFeedbackList((prev) => [newFb, ...prev.filter((item) => item.id !== newFb.id)]);
+          }
         } catch {
           fetchSessionState();
         }
+      });
+
+      eventSource.addEventListener('admin-feedback-added', () => {
+        if (adminToken) fetchAdminData();
       });
 
       eventSource.addEventListener('feedback-upvoted', (e: any) => {
@@ -467,7 +473,8 @@ export default function App() {
   // Handle participant submit feedback / question
   const handleSubmitFeedback = async (
     message: string,
-    category: 'feedback' | 'question' | 'suggestion'
+    category: 'feedback' | 'question' | 'suggestion',
+    isPublic: boolean = true
   ): Promise<boolean> => {
     try {
       const res = await fetch('/api/participant/feedback', {
@@ -479,11 +486,14 @@ export default function App() {
           category,
           participantName: profile.name,
           participantAvatar: profile.avatar,
+          isPublic,
         }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setFeedbackList((prev) => [data.feedback, ...prev]);
+        if (data.feedback && data.feedback.isPublic !== false) {
+          setFeedbackList((prev) => [data.feedback, ...prev.filter((f) => f.id !== data.feedback.id)]);
+        }
         return true;
       }
       return false;
@@ -859,50 +869,65 @@ export default function App() {
   };
 
   // Attendance handlers
-  const handleStartAttendance = async (sessionId: string): Promise<boolean> => {
+  const handleStartAttendance = async (sessionId?: string, questionId?: string): Promise<boolean> => {
     if (!adminToken) return false;
+    const targetSessionId = sessionId || activeSessionId || sessions.find((s) => !s.isArchived)?.id || sessions[0]?.id || 'active';
     try {
-      const res = await fetch(`/api/admin/sessions/${sessionId}/start-attendance`, {
+      const res = await fetch(`/api/admin/sessions/${targetSessionId}/start-attendance`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${adminToken}`,
         },
+        body: JSON.stringify({ sessionId: targetSessionId, questionId }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setAttendanceExpiresAt(data.attendanceExpiresAt);
+        const expiresAt = data.attendanceExpiresAt || data.expiresAt;
+        setAttendanceExpiresAt(expiresAt);
         setAttendanceSecondsLeft(data.attendanceSecondsLeft || 90);
+        setPollStatus('open');
+        setActiveQuestion(data.attendanceQuestion || null);
+        setSessionEnded(false);
+        setIsArchived(false);
         await fetchSessionState();
         await fetchAdminData();
         return true;
       }
+      console.warn('Attendance could not start:', data.error);
       return false;
-    } catch {
+    } catch (err) {
+      console.error('Error starting attendance:', err);
       return false;
     }
   };
 
-  const handleStopAttendance = async (sessionId: string): Promise<boolean> => {
+  const handleStopAttendance = async (sessionId?: string): Promise<boolean> => {
     if (!adminToken) return false;
+    const targetSessionId = sessionId || activeSessionId || sessions.find((s) => !s.isArchived)?.id || sessions[0]?.id || 'active';
     try {
-      const res = await fetch(`/api/admin/sessions/${sessionId}/stop-attendance`, {
+      const res = await fetch(`/api/admin/sessions/${targetSessionId}/stop-attendance`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${adminToken}`,
         },
+        body: JSON.stringify({ sessionId: targetSessionId }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
         setAttendanceExpiresAt(null);
         setAttendanceSecondsLeft(null);
+        setActiveQuestion(null);
+        setPollStatus('closed');
         await fetchSessionState();
         await fetchAdminData();
         return true;
       }
+      console.warn('Attendance could not stop:', data.error);
       return false;
-    } catch {
+    } catch (err) {
+      console.error('Error stopping attendance:', err);
       return false;
     }
   };

@@ -17,7 +17,9 @@ import {
   Award,
   Archive,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { Question, Answer, AnonymousFeedback, QuestionResultsSummary, ParticipantProfile, AttendanceRecord } from '../types';
 import { AttendanceForm } from './AttendanceForm';
@@ -44,7 +46,7 @@ interface ParticipantViewProps {
   onOpenLeaderboard: () => void;
   onSubmitAnswer: (questionId: string, value: any) => Promise<{ success: boolean; isCorrect?: boolean; pointsEarned?: number; error?: string }>;
   onSubmitAttendance: (data: { studentNumber: string; fullName: string; location: any; deviceSignature: any }) => Promise<{ success: boolean; record?: AttendanceRecord; error?: string }>;
-  onSubmitFeedback: (message: string, category: 'feedback' | 'question' | 'suggestion') => Promise<boolean>;
+  onSubmitFeedback: (message: string, category: 'feedback' | 'question' | 'suggestion', isPublic?: boolean) => Promise<boolean>;
   onUpvoteFeedback: (feedbackId: string) => Promise<boolean>;
 }
 
@@ -85,8 +87,10 @@ export const ParticipantView: React.FC<ParticipantViewProps> = ({
   // Anonymous Q&A state
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const [feedbackCategory, setFeedbackCategory] = useState<'feedback' | 'question' | 'suggestion'>('question');
+  const [isPublicFeedback, setIsPublicFeedback] = useState<boolean>(true);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [feedbackSuccess, setFeedbackSuccess] = useState(false);
+  const [feedbackSuccessMsg, setFeedbackSuccessMsg] = useState('');
   const [activeTab, setActiveTab] = useState<'poll' | 'feedback'>('poll');
 
   // Sync inputs with existing answer or reset when active question changes
@@ -162,12 +166,17 @@ export const ParticipantView: React.FC<ParticipantViewProps> = ({
     if (!feedbackMessage.trim()) return;
 
     setIsSubmittingFeedback(true);
-    const success = await onSubmitFeedback(feedbackMessage.trim(), feedbackCategory);
+    const success = await onSubmitFeedback(feedbackMessage.trim(), feedbackCategory, isPublicFeedback);
     setIsSubmittingFeedback(false);
     if (success) {
       setFeedbackMessage('');
+      setFeedbackSuccessMsg(
+        isPublicFeedback
+          ? 'Mesajınız oturumdaki tüm katılımcılara açık olarak iletildi.'
+          : 'Mesajınız gizli olarak yalnızca toplantı yöneticisine (Admin) iletildi. Katılımcı akışında görünmeyecektir.'
+      );
       setFeedbackSuccess(true);
-      setTimeout(() => setFeedbackSuccess(false), 3000);
+      setTimeout(() => setFeedbackSuccess(false), 4000);
     }
   };
 
@@ -256,16 +265,46 @@ export const ParticipantView: React.FC<ParticipantViewProps> = ({
       {/* TAB 1: ACTIVE QUESTION / POLL */}
       {activeTab === 'poll' && (
         <div className="space-y-4">
-          {!activeQuestion ? (
-            /* No active question */
-            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center shadow-xs">
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
-                <Clock className="w-6 h-6 animate-spin-slow" />
+          {!activeQuestion || (activeQuestion.type === 'attendance' && (pollStatus !== 'open' || !attendanceExpiresAt || (attendanceSecondsLeft !== null && attendanceSecondsLeft !== undefined && attendanceSecondsLeft <= 0))) ? (
+            /* Soru Bekleniyor Card */
+            <div id="participant-waiting-question-card" className="bg-white rounded-3xl border border-slate-200 p-8 sm:p-10 text-center shadow-xs space-y-4">
+              <div className="w-16 h-16 rounded-3xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto shadow-inner ring-8 ring-blue-50/60">
+                <Sparkles className="w-8 h-8 animate-pulse" />
               </div>
-              <h3 className="font-bold text-slate-900 text-base mb-1">Oturum Yöneticisi Bekleniyor</h3>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-                Yönetici yeni bir soru veya anket başlattığında ekranda anında görünecektir. Sayfayı kapatmayın.
-              </p>
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                  <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
+                  <span>Canlı Oturum Bağlantısı Aktif</span>
+                </div>
+                <h3 className="font-extrabold text-slate-900 text-xl sm:text-2xl tracking-tight">
+                  Soru Bekleniyor
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto leading-relaxed font-medium">
+                  Şu anda aktif bir soru veya yoklama bulunmuyor. Oturum yöneticisi yeni bir soru veya yoklama başlattığında ekranınız otomatik olarak açılacaktır.
+                </p>
+              </div>
+
+              {/* Attendance confirmation notice if participant completed attendance in this session */}
+              {participantAttendanceRecord && (
+                <div className="mt-4 p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-900 flex items-center justify-between gap-3 text-left max-w-md mx-auto shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div>
+                      <span className="font-bold block text-emerald-950">Yoklamanız Başarıyla Kaydedildi</span>
+                      <span className="text-[11px] text-emerald-700">
+                        {participantAttendanceRecord.fullName} (#{participantAttendanceRecord.studentNumber})
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-white px-2 py-0.5 rounded-md border border-emerald-200 text-emerald-700 shrink-0">
+                    Kayıtlı ✓
+                  </span>
+                </div>
+              )}
+
+              <div className="pt-2 text-[11px] text-slate-400 font-medium">
+                {sessionTitle ? `«${sessionTitle}»` : 'Oturum'} {sessionCode ? `(#${sessionCode})` : ''} • Ekranınız anlık güncellenir
+              </div>
             </div>
           ) : activeQuestion.type === 'attendance' ? (
             /* Attendance (Yoklama) 90-Second Form */
@@ -730,11 +769,11 @@ export const ParticipantView: React.FC<ParticipantViewProps> = ({
             {feedbackSuccess && (
               <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Mesajınız oturum yöneticisine anonim olarak iletildi!</span>
+                <span>{feedbackSuccessMsg || 'Mesajınız oturum yöneticisine anonim olarak iletildi!'}</span>
               </div>
             )}
 
-            <form onSubmit={handleSendFeedback} className="space-y-3">
+            <form onSubmit={handleSendFeedback} className="space-y-3.5">
               {/* Category Selector */}
               <div className="flex gap-2">
                 {(['question', 'feedback', 'suggestion'] as const).map((cat) => {
@@ -745,7 +784,7 @@ export const ParticipantView: React.FC<ParticipantViewProps> = ({
                       key={cat}
                       type="button"
                       onClick={() => setFeedbackCategory(cat)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
                         isSel
                           ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
                           : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
@@ -772,13 +811,77 @@ export const ParticipantView: React.FC<ParticipantViewProps> = ({
                 </div>
               </div>
 
+              {/* Herkes Görebilsin mi? (Evet / Hayır Switch) */}
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    {isPublicFeedback ? (
+                      <Eye className="w-4 h-4 text-purple-600 shrink-0" />
+                    ) : (
+                      <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                    )}
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block">
+                        Herkes görebilsin mi?
+                      </span>
+                      <span className="text-[11px] text-slate-500 block">
+                        {isPublicFeedback
+                          ? 'Evet: Tüm katılımcılar ve toplantı yöneticisi görebilir.'
+                          : 'Hayır: Yalnızca toplantı yöneticisi görebilir, diğer katılımcılar göremez.'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Segmented Evet / Hayır Switch */}
+                  <div className="flex items-center bg-slate-200/90 p-1 rounded-xl shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setIsPublicFeedback(true)}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                        isPublicFeedback
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Check className="w-3 h-3" />
+                      <span>Evet</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsPublicFeedback(false)}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                        !isPublicFeedback
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Lock className="w-3 h-3" />
+                      <span>Hayır</span>
+                    </button>
+                  </div>
+                </div>
+
+                {!isPublicFeedback && (
+                  <div className="p-2 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-900 flex items-center gap-1.5 font-medium">
+                    <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Gizli İleti: Sadece yönetici paneline düşecek, katılımcı akışında listelenmeyecektir.</span>
+                  </div>
+                )}
+              </div>
+
               <button
                 type="submit"
                 disabled={isSubmittingFeedback || !feedbackMessage.trim()}
                 className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs sm:text-sm shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>{isSubmittingFeedback ? 'İletiliyor...' : 'Anonim Olarak Gönder'}</span>
+                <span>
+                  {isSubmittingFeedback
+                    ? 'İletiliyor...'
+                    : !isPublicFeedback
+                    ? 'Sadece Yöneticiye Gizli İlet'
+                    : 'Anonim Olarak Gönder'}
+                </span>
               </button>
             </form>
           </div>
