@@ -118,6 +118,7 @@ export interface MeetingSession {
   endTime: string; // Bitiş saati: HH:mm e.g. "15:30"
   isArchived: boolean; // Arşivde mi?
   sessionEnded: boolean; // Oturum tamamlandı mı?
+  showResultsToParticipants?: boolean; // Katılımcılara sonuçlar açık mı?
   pollStatus: 'open' | 'closed';
   activeQuestionId: string | null;
   assignedQuestionIds?: string[];

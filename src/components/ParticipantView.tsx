@@ -205,22 +205,30 @@ export const ParticipantView: React.FC<ParticipantViewProps> = ({
           </div>
         </div>
       ) : sessionEnded ? (
-        /* SESSION ENDED BANNER */
-        <div className="bg-linear-to-r from-amber-500 to-yellow-600 rounded-2xl p-4 text-white shadow-md flex items-center justify-between gap-3">
+        /* SESSION ENDED BANNER WITH THANK YOU MESSAGE */
+        <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 rounded-2xl p-4 text-white shadow-md flex items-center justify-between gap-3 animate-in fade-in duration-200">
           <div className="flex items-center gap-3">
-            <span className="text-3xl">🏆</span>
+            <span className="text-3xl">{showResults ? '🏆' : '🙏'}</span>
             <div>
-              <h3 className="font-extrabold text-sm sm:text-base">Toplantı Oturumu Tamamlandı!</h3>
-              <p className="text-xs text-amber-100">Katılımınız için teşekkürler. Sonuçlar ve liderlik tablosu açıklandı.</p>
+              <h3 className="font-extrabold text-sm sm:text-base">
+                {showResults ? 'Toplantı Oturumu Tamamlandı!' : 'Toplantı Oturumu Sona Erdi'}
+              </h3>
+              <p className="text-xs text-amber-100 font-medium">
+                {showResults
+                  ? 'Değerli katılımınız için çok teşekkür ederiz! Oylama sonuçları açıklandı.'
+                  : 'Değerli katılımınız ve katkılarınız için çok teşekkür ederiz! Oturum başarıyla sonlandırılmıştır.'}
+              </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onOpenLeaderboard}
-            className="px-3.5 py-2 bg-white text-amber-900 font-bold text-xs rounded-xl shadow-xs hover:bg-amber-50 transition-colors shrink-0 cursor-pointer"
-          >
-            Sıralamayı Gör
-          </button>
+          {showResults && (
+            <button
+              type="button"
+              onClick={onOpenLeaderboard}
+              className="px-3.5 py-2 bg-white text-amber-900 font-bold text-xs rounded-xl shadow-xs hover:bg-amber-50 transition-colors shrink-0 cursor-pointer"
+            >
+              Sıralamayı Gör
+            </button>
+          )}
         </div>
       ) : null}
 
@@ -265,7 +273,62 @@ export const ParticipantView: React.FC<ParticipantViewProps> = ({
       {/* TAB 1: ACTIVE QUESTION / POLL */}
       {activeTab === 'poll' && (
         <div className="space-y-4">
-          {!activeQuestion || (activeQuestion.type === 'attendance' && (pollStatus !== 'open' || !attendanceExpiresAt || (attendanceSecondsLeft !== null && attendanceSecondsLeft !== undefined && attendanceSecondsLeft <= 0))) ? (
+          {sessionEnded && !isArchived ? (
+            /* Dedicated Session Ended Thank You Card */
+            <div id="participant-session-ended-card" className="bg-white rounded-3xl border border-amber-200 p-8 sm:p-10 text-center shadow-xs space-y-4 bg-gradient-to-b from-amber-50/50 via-white to-white">
+              <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto shadow-inner ring-8 ring-amber-50">
+                <Sparkles className="w-8 h-8" />
+              </div>
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                  <CheckCircle className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Oturum Başarıyla Tamamlandı</span>
+                </div>
+                <h3 className="font-extrabold text-slate-900 text-xl sm:text-2xl tracking-tight">
+                  Katılımınız İçin Çok Teşekkür Ederiz!
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto leading-relaxed font-medium">
+                  {showResults 
+                    ? 'Toplantımız sona ermiştir. Katkılarınız, verdiğiniz oylar ve ilettiğiniz değerli görüşleriniz için teşekkür ederiz. Sonuçları ve sıralamayı aşağıdan inceleyebilirsiniz.' 
+                    : 'Toplantımız başarıyla sona ermiştir. Katkılarınız, paylaştığınız yanıtlar ve değerli katılımınız için çok teşekkür ederiz.'}
+                </p>
+              </div>
+
+              {showResults && (
+                <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onOpenLeaderboard}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trophy className="w-4 h-4" />
+                    <span>Liderlik Sıralamasını Gör</span>
+                  </button>
+                </div>
+              )}
+
+              {participantAttendanceRecord && (
+                <div className="mt-4 p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-900 flex items-center justify-between gap-3 text-left max-w-md mx-auto shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div>
+                      <span className="font-bold block text-emerald-950">Yoklamanız Başarıyla Kaydedildi</span>
+                      <span className="text-[11px] text-emerald-700">
+                        {participantAttendanceRecord.fullName} (#{participantAttendanceRecord.studentNumber})
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-white px-2 py-0.5 rounded-md border border-emerald-200 text-emerald-700 shrink-0">
+                    Kayıtlı ✓
+                  </span>
+                </div>
+              )}
+
+              <div className="pt-2 text-[11px] text-slate-400 font-medium">
+                {sessionTitle ? `«${sessionTitle}»` : 'Oturum'} {sessionCode ? `(#${sessionCode})` : ''} • Oturum sona erdi
+              </div>
+            </div>
+          ) : !activeQuestion || (activeQuestion.type === 'attendance' && (pollStatus !== 'open' || !attendanceExpiresAt || (attendanceSecondsLeft !== null && attendanceSecondsLeft !== undefined && attendanceSecondsLeft <= 0))) ? (
             /* Soru Bekleniyor Card */
             <div id="participant-waiting-question-card" className="bg-white rounded-3xl border border-slate-200 p-8 sm:p-10 text-center shadow-xs space-y-4">
               <div className="w-16 h-16 rounded-3xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto shadow-inner ring-8 ring-blue-50/60">

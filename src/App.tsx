@@ -368,6 +368,21 @@ export default function App() {
         if (adminToken) fetchAdminData();
       });
 
+      eventSource.addEventListener('feedback-deleted', (e: any) => {
+        try {
+          const { id } = JSON.parse(e.data);
+          setFeedbackList((prev) => prev.filter((item) => item.id !== id));
+        } catch {
+          fetchSessionState();
+        }
+        if (adminToken) fetchAdminData();
+      });
+
+      eventSource.addEventListener('feedback-cleared', () => {
+        setFeedbackList([]);
+        if (adminToken) fetchAdminData();
+      });
+
       eventSource.addEventListener('feedback-upvoted', (e: any) => {
         try {
           const { id, upvotes } = JSON.parse(e.data);
@@ -629,19 +644,26 @@ export default function App() {
     }
   };
 
-  const handleToggleSessionEnded = async (ended: boolean): Promise<boolean> => {
+  const handleToggleSessionEnded = async (ended: boolean, showResults?: boolean): Promise<boolean> => {
     if (!adminToken) return false;
     try {
+      const payload: any = { sessionEnded: ended };
+      if (showResults !== undefined) {
+        payload.showResultsToParticipants = showResults;
+      }
       const res = await fetch('/api/admin/active-question', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${adminToken}`,
         },
-        body: JSON.stringify({ sessionEnded: ended }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         setSessionEnded(ended);
+        if (showResults !== undefined) {
+          setShowResultsToParticipants(showResults);
+        }
         await fetchAdminData();
         await fetchSessionState();
         return true;
@@ -848,6 +870,26 @@ export default function App() {
     }
   };
 
+  const handleDeleteFeedback = async (feedbackId: string): Promise<boolean> => {
+    if (!adminToken) return false;
+    try {
+      const res = await fetch(`/api/admin/feedback/${feedbackId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+        },
+      });
+      if (res.ok) {
+        setFeedbackList((prev) => prev.filter((f) => f.id !== feedbackId));
+        await fetchAdminData();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
   const handleOpenCreateModal = (onTheFly: boolean) => {
     setEditingQuestion(null);
     setEditorLaunchByDefault(onTheFly);
@@ -1034,6 +1076,7 @@ export default function App() {
             onActivateSession={handleActivateSession}
             onToggleFeedbackRead={handleToggleFeedbackRead}
             onMarkAllFeedbackRead={handleMarkAllFeedbackRead}
+            onDeleteFeedback={handleDeleteFeedback}
             onStartAttendance={handleStartAttendance}
             onStopAttendance={handleStopAttendance}
             onRefreshAttendance={fetchAdminData}

@@ -514,6 +514,9 @@ async function startServer() {
     let participantAttendanceRecord: AttendanceRecord | null = null;
     let results: QuestionResultsSummary | null = null;
 
+    // STRICT CHECK: Results ONLY visible if session is ended AND NOT archived AND showResultsToParticipants is true!
+    const canShowResults = !activeSession.isArchived && Boolean(activeSession.sessionEnded) && (activeSession.showResultsToParticipants !== false);
+
     if (activeQuestion) {
       const activeAnswers = store.answers.filter((a) => a.questionId === activeQuestion.id && a.sessionId === activeSession.id);
       totalResponsesForActive = activeAnswers.length;
@@ -531,8 +534,7 @@ async function startServer() {
         }
       }
 
-      // STRICT CHECK: Results ONLY visible if session is ended AND NOT archived!
-      if (!activeSession.isArchived && activeSession.sessionEnded) {
+      if (canShowResults) {
         results = computeQuestionResults(activeQuestion, store.answers, activeSession.id);
       }
     }
@@ -541,8 +543,7 @@ async function startServer() {
       ? Math.max(0, Math.ceil((activeSession.attendanceExpiresAt - Date.now()) / 1000))
       : null;
 
-    // STRICT CHECK: Leaderboard is ONLY visible if session is ended AND NOT archived!
-    const leaderboard = (!activeSession.isArchived && activeSession.sessionEnded)
+    const leaderboard = canShowResults
       ? computeLeaderboard(store, activeSession.id)
       : [];
 
@@ -566,8 +567,8 @@ async function startServer() {
       isArchived: Boolean(activeSession.isArchived),
       activeQuestion,
       pollStatus: activeSession.pollStatus,
-      // Results allowed only if ended and NOT archived
-      showResultsToParticipants: !activeSession.isArchived && Boolean(activeSession.sessionEnded),
+      // Results allowed only if ended and NOT archived and showResultsToParticipants !== false
+      showResultsToParticipants: canShowResults,
       sessionEnded: Boolean(activeSession.sessionEnded),
       activeParticipantCount: Math.max(1, participantHeartbeats.size),
       totalResponsesForActive,
@@ -1594,6 +1595,34 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // Admin: Delete feedback item
+  app.delete('/api/admin/feedback/:id', verifyAdminAuth, (req, res) => {
+    const { id } = req.params;
+    const store = loadData();
+    const index = store.feedback.findIndex((f) => f.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: 'Geri bildirim / soru bulunamadı.' });
+    }
+    store.feedback.splice(index, 1);
+    saveData(store);
+    broadcastSSE('feedback-deleted', { id });
+    res.json({ success: true, message: 'Geri bildirim / soru başarıyla silindi.' });
+  });
+
+  // Admin: Delete all feedback (optionally by session)
+  app.delete('/api/admin/feedback', verifyAdminAuth, (req, res) => {
+    const { sessionId } = req.query;
+    const store = loadData();
+    if (sessionId) {
+      store.feedback = store.feedback.filter((f) => f.sessionId !== sessionId);
+    } else {
+      store.feedback = [];
+    }
+    saveData(store);
+    broadcastSSE('feedback-cleared', { sessionId });
+    res.json({ success: true, message: 'Geri bildirimler temizlendi.' });
+  });
+
   // Admin: Add question
   app.post('/api/admin/questions', verifyAdminAuth, (req, res) => {
     const { 
@@ -1835,26 +1864,32 @@ async function startServer() {
       activeSession.sessionEnded = Boolean(sessionEnded);
       store.sessionEnded = Boolean(sessionEnded);
     }
+    if (showResultsToParticipants !== undefined) {
+      activeSession.showResultsToParticipants = Boolean(showResultsToParticipants);
+      store.showResultsToParticipants = Boolean(showResultsToParticipants);
+    }
     if (sessionTitle !== undefined) {
       activeSession.title = sessionTitle.trim();
       store.sessionTitle = sessionTitle.trim();
     }
 
+    const canShowResults = !activeSession.isArchived && Boolean(activeSession.sessionEnded) && (activeSession.showResultsToParticipants !== false);
+
     saveData(store);
     broadcastSSE('session-state-changed', {
       activeQuestionId: activeSession.activeQuestionId,
       pollStatus: activeSession.pollStatus,
-      showResultsToParticipants: !activeSession.isArchived && Boolean(activeSession.sessionEnded),
+      showResultsToParticipants: canShowResults,
       sessionEnded: activeSession.sessionEnded,
       isArchived: activeSession.isArchived,
-      leaderboard: (!activeSession.isArchived && activeSession.sessionEnded) ? computeLeaderboard(store, activeSession.id) : [],
+      leaderboard: canShowResults ? computeLeaderboard(store, activeSession.id) : [],
     });
 
     res.json({
       success: true,
       activeQuestionId: activeSession.activeQuestionId,
       pollStatus: activeSession.pollStatus,
-      showResultsToParticipants: !activeSession.isArchived && Boolean(activeSession.sessionEnded),
+      showResultsToParticipants: canShowResults,
       sessionEnded: activeSession.sessionEnded,
       isArchived: activeSession.isArchived,
     });
